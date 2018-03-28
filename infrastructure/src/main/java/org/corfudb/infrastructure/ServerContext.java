@@ -134,7 +134,6 @@ public class ServerContext implements AutoCloseable {
         this.serverConfig = serverConfig;
         this.dataStore = new DataStore(serverConfig);
         generateNodeId();
-        this.serverRouter = serverRouter;
         this.failureDetector = new FailureDetector();
         this.healingDetector = new HealingDetector();
         this.failureHandlerPolicy = new ConservativeFailureHandlerPolicy();
