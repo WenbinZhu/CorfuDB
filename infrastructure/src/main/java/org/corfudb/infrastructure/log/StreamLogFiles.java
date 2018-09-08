@@ -10,6 +10,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
 import org.corfudb.format.Types;
 import org.corfudb.format.Types.LogEntry;
 import org.corfudb.format.Types.LogHeader;
@@ -820,16 +821,21 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
         filePath += ".log";
 
         SegmentHandle handle = writeChannels.computeIfAbsent(filePath, a -> {
+            FileChannel writeCh = null;
+            FileChannel readCh = null;
+            FileChannel trimmedCh = null;
+            FileChannel pendingTrimmedCh = null;
+
             try {
                 boolean verify = true;
                 if (noVerify) {
                     verify = false;
                 }
 
-                FileChannel writeCh = getChannel(a, false);
-                FileChannel readCh = getChannel(a, true);
-                FileChannel trimmedCh = getChannel(getTrimmedFilePath(a), false);
-                FileChannel pendingTrimmedCh = getChannel(getPendingTrimsFilePath(a), false);
+                writeCh = getChannel(a, false);
+                readCh = getChannel(a, true);
+                trimmedCh = getChannel(getTrimmedFilePath(a), false);
+                pendingTrimmedCh = getChannel(getPendingTrimsFilePath(a), false);
 
                 SegmentHandle sh = new SegmentHandle(segment, writeCh, readCh, trimmedCh, pendingTrimmedCh, a);
                 // The first time we open a file we should read to the end, to load the
@@ -840,6 +846,10 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
                 return sh;
             } catch (IOException e) {
                 log.error("Error opening file {}", a, e);
+                IOUtils.closeQuietly(writeCh);
+                IOUtils.closeQuietly(readCh);
+                IOUtils.closeQuietly(trimmedCh);
+                IOUtils.closeQuietly(pendingTrimmedCh);
                 throw new RuntimeException(e);
             }
         });
@@ -871,8 +881,7 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             }
         }
 
-        try (FileChannel fcPending =
-                     getChannel(getPendingTrimsFilePath(sh.getFileName()), true)) {
+        try (FileChannel fcPending = getChannel(getPendingTrimsFilePath(sh.getFileName()), true)) {
             try (InputStream pendingInputStream = Channels.newInputStream(fcPending)) {
 
                 while (fcPending.position() < pendingTrimSize) {
