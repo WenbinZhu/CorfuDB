@@ -3,7 +3,6 @@ package org.corfudb.infrastructure.log;
 import lombok.Data;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.io.IOUtils;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
