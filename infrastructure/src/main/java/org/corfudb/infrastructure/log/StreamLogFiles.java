@@ -462,6 +462,8 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
 
     private CompactedEntry getCompactedEntries(String filePath, Set<Long> pendingTrim) throws IOException {
 
+        ByteBuffer o;
+        ByteBuffer headerBuf;
         try (FileChannel fc = getChannel(filePath, true)) {
             // Skip the header
             ByteBuffer headerMetadataBuf = ByteBuffer.allocate(METADATA_SIZE);
@@ -469,49 +471,49 @@ public class StreamLogFiles implements StreamLog, StreamLogWithRankedAddressSpac
             headerMetadataBuf.flip();
 
             Metadata headerMetadata = Metadata.parseFrom(headerMetadataBuf.array());
-            ByteBuffer headerBuf = ByteBuffer.allocate(headerMetadata.getLength());
+            headerBuf = ByteBuffer.allocate(headerMetadata.getLength());
             fc.read(headerBuf);
             headerBuf.flip();
 
-            ByteBuffer o = ByteBuffer.allocate((int) fc.size() - (int) fc.position());
+            o = ByteBuffer.allocate((int) fc.size() - (int) fc.position());
             fc.read(o);
             o.flip();
-
-            LinkedHashMap<Long, LogEntry> compacted = new LinkedHashMap<>();
-
-            while (o.hasRemaining()) {
-                byte[] metadataBuf = new byte[METADATA_SIZE];
-                o.get(metadataBuf);
-
-                try {
-                    Metadata metadata = Metadata.parseFrom(metadataBuf);
-
-                    byte[] logEntryBuf = new byte[metadata.getLength()];
-
-                    o.get(logEntryBuf);
-
-                    LogEntry entry = LogEntry.parseFrom(logEntryBuf);
-
-                    if (!noVerify) {
-                        if (metadata.getPayloadChecksum() != getChecksum(entry.toByteArray())) {
-                            log.error("Checksum mismatch detected while trying to read address {}",
-                                    entry.getGlobalAddress());
-                            throw new DataCorruptionException();
-                        }
-                    }
-
-                    if (!pendingTrim.contains(entry.getGlobalAddress())) {
-                        compacted.put(entry.getGlobalAddress(), entry);
-                    }
-
-                } catch (InvalidProtocolBufferException e) {
-                    throw new DataCorruptionException();
-                }
-            }
-
-            LogHeader header = LogHeader.parseFrom(headerBuf.array());
-            return new CompactedEntry(header, compacted.values());
         }
+
+        LinkedHashMap<Long, LogEntry> compacted = new LinkedHashMap<>();
+
+        while (o.hasRemaining()) {
+            byte[] metadataBuf = new byte[METADATA_SIZE];
+            o.get(metadataBuf);
+
+            try {
+                Metadata metadata = Metadata.parseFrom(metadataBuf);
+
+                byte[] logEntryBuf = new byte[metadata.getLength()];
+
+                o.get(logEntryBuf);
+
+                LogEntry entry = LogEntry.parseFrom(logEntryBuf);
+
+                if (!noVerify) {
+                    if (metadata.getPayloadChecksum() != getChecksum(entry.toByteArray())) {
+                        log.error("Checksum mismatch detected while trying to read address {}",
+                                entry.getGlobalAddress());
+                        throw new DataCorruptionException();
+                    }
+                }
+
+                if (!pendingTrim.contains(entry.getGlobalAddress())) {
+                    compacted.put(entry.getGlobalAddress(), entry);
+                }
+
+            } catch (InvalidProtocolBufferException e) {
+                throw new DataCorruptionException();
+            }
+        }
+
+        LogHeader header = LogHeader.parseFrom(headerBuf.array());
+        return new CompactedEntry(header, compacted.values());
     }
 
     private LogData getLogData(LogEntry entry) {
