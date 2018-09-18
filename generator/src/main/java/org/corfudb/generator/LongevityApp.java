@@ -6,6 +6,7 @@ import org.corfudb.generator.operations.Operation;
 import org.corfudb.runtime.CorfuRuntime;
 import org.corfudb.runtime.exceptions.unrecoverable.SystemUnavailableError;
 
+import java.util.Date;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -24,7 +25,6 @@ import java.util.concurrent.TimeUnit;
  *
  * I use a blocking queue in order to limit the number of operation
  * created at any time. Operations as created and consumed as we go.
- *
  */
 @Slf4j
 public class LongevityApp {
@@ -92,6 +92,10 @@ public class LongevityApp {
                 - state.getLastSuccessfulReadOperationTimestamp();
         long timeSinceSuccessfulWriteOperation = System.currentTimeMillis()
                 - state.getLastSuccessfulWriteOperationTimestamp();
+        log.info("timeSinceSuccessfulReadOperation = {}, timeSinceSuccessfulWriteOperation = {}, "
+                        + "APPLICATION_TIMEOUT_IN_MS = {}",
+                timeSinceSuccessfulReadOperation, timeSinceSuccessfulWriteOperation,
+                APPLICATION_TIMEOUT_IN_MS);
 
         return (timeSinceSuccessfulReadOperation < APPLICATION_TIMEOUT_IN_MS
                 && timeSinceSuccessfulWriteOperation < APPLICATION_TIMEOUT_IN_MS);
@@ -111,9 +115,10 @@ public class LongevityApp {
     private void waitForAppToFinish() {
         workers.shutdown();
         try {
-            boolean finishedInTime = workers.
-                    awaitTermination(durationMs + APPLICATION_TIMEOUT_IN_MS, TimeUnit.MILLISECONDS);
+            boolean finishedInTime = workers
+                    .awaitTermination(durationMs + APPLICATION_TIMEOUT_IN_MS, TimeUnit.MILLISECONDS);
 
+            log.info("LongevityApp: finishedInTime: {}", finishedInTime);
             String livenessState = livenessSuccess(finishedInTime) ? "Success" : "Fail";
 
             Correctness.recordOperation("Liveness, " + livenessState, false);
@@ -129,10 +134,10 @@ public class LongevityApp {
             boolean checkpointHasFinished = false;
             int exitStatus;
             try {
-                checkpointHasFinished = checkpointer.awaitTermination(APPLICATION_TIMEOUT_IN_MS, TimeUnit.MILLISECONDS);
+                checkpointHasFinished = checkpointer
+                        .awaitTermination(APPLICATION_TIMEOUT_IN_MS, TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                exitStatus = 1;
             }
 
             exitStatus = checkpointHasFinished ? 0 : 1;
@@ -185,12 +190,16 @@ public class LongevityApp {
         for (int i = 0; i < numberThreads; i++) {
             workers.execute(() -> {
                 while (withinDurationLimit()) {
+                    log.info("LongevityApp: starting consumerTask: id:{} time:{}",
+                            Thread.currentThread().getId(), new Date(System.currentTimeMillis()));
                     try {
                         Operation op = operationQueue.take();
                         op.execute();
                     } catch (Exception e) {
                         log.error("Operation failed with", e);
                     }
+                    log.info("LongevityApp: ending consumerTask: id:{} time:{}",
+                            Thread.currentThread().getId(), new Date(System.currentTimeMillis()));
                 }
             });
         }
@@ -215,7 +224,7 @@ public class LongevityApp {
      * @param timeoutInMs
      * @throws SystemUnavailableError
      */
-    private void tryToConnectTimeout (long timeoutInMs) throws SystemUnavailableError {
+    private void tryToConnectTimeout(long timeoutInMs) throws SystemUnavailableError {
         try {
             CompletableFuture.supplyAsync(() -> rt.connect()).get(timeoutInMs, TimeUnit.MILLISECONDS);
         } catch (Exception e) {
